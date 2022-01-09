@@ -27,7 +27,7 @@ func handleIndex(c *gin.Context) {
 func handleSolve(c *gin.Context) {
 	solveVM := vmSolvePuzzle{}
 	if err := c.Bind(&solveVM); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request format"})
+		c.JSON(http.StatusBadRequest, newVMSolvePuzzleResponse(Unparsable, nil))
 		return
 	}
 
@@ -37,10 +37,11 @@ func handleSolve(c *gin.Context) {
 		return
 	}
 
-	if err := solver.SolveGrid(grid); err != nil {
+	result, err := solver.SolveGrid(grid)
+	if err != nil || len(result.SolvedGrids) == 0 {
 		c.JSON(http.StatusConflict, newVMSolvePuzzleResponse(Unsolvable, nil))
 		return
 	}
 
-	c.JSON(http.StatusOK, newVMSolvePuzzleResponse(NoError, grid.IntValues()))
+	c.JSON(http.StatusOK, newVMSolvePuzzleResponse(NoError, result.SolvedGrids[0].IntValues()))
 }

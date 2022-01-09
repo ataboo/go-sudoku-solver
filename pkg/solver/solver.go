@@ -5,7 +5,11 @@ import (
 	"time"
 )
 
-var solvedChan chan *suGrid = make(chan *suGrid)
+type SolverConfig struct {
+	SolutionLimit int
+	Timeout       time.Duration
+	RunParallel   bool
+}
 
 type SudokuGrid interface {
 	///String representation of the Sudoku grid pipe-separated.
@@ -16,38 +20,102 @@ type SudokuGrid interface {
 	IntValues() []int
 }
 
+type SolverResult struct {
+	SolvedGrids  []SudokuGrid
+	ForkCount    int
+	DeadEndCount int
+	TimedOut     int
+}
+
+type sudokuSolver struct {
+	solvedChan      chan *suGrid
+	forkChan        chan bool
+	deadChan        chan bool
+	activeGridCount int
+	result          *SolverResult
+	config          SolverConfig
+}
+
 ///Solve the SudokuGrid represented by the provided integers.
 ///Expects 81 values ordered left-to-right rows, top-to-bottom.
-func SolveGrid(sudokuGrid SudokuGrid) error {
+func SolveGrid(sudokuGrid SudokuGrid) (*SolverResult, error) {
+	config := SolverConfig{
+		SolutionLimit: 1,
+		Timeout:       1 * time.Second,
+		RunParallel:   true,
+	}
+
+	return SolveGridWithConfig(sudokuGrid, config)
+}
+
+func SolveGridWithConfig(sudokuGrid SudokuGrid, config SolverConfig) (*SolverResult, error) {
+	suSolver := &sudokuSolver{
+		solvedChan:      make(chan *suGrid),
+		forkChan:        make(chan bool),
+		deadChan:        make(chan bool),
+		activeGridCount: 1,
+		result: &SolverResult{
+			SolvedGrids:  make([]SudokuGrid, 0),
+			ForkCount:    0,
+			DeadEndCount: 0,
+			TimedOut:     0,
+		},
+		config: config,
+	}
+
 	grid, ok := sudokuGrid.(*suGrid)
 	if !ok {
-		return fmt.Errorf("invalid grid")
+		return nil, fmt.Errorf("invalid grid")
 	}
 
 	if err := grid.initSetMaps(); err != nil {
-		return fmt.Errorf("duplicates found in the grid")
+		return nil, fmt.Errorf("duplicates found in the grid")
 	}
 
-	go gridSolvingRoutine(grid)
+	go gridSolvingRoutine(grid, suSolver)
 
-	select {
-	case solvedGrid := <-solvedChan:
-		copy(grid.numbers, solvedGrid.numbers)
-		grid.gridState = solvedGrid.gridState
-		return nil
-	case <-time.After(time.Second * 10):
-		return fmt.Errorf("the solver timed out")
+	suSolver.run(grid)
+
+	return suSolver.result, nil
+}
+
+func (s *sudokuSolver) run(grid *suGrid) {
+	timeout := time.After(s.config.Timeout)
+
+	for {
+		select {
+		case solvedGrid := <-s.solvedChan:
+			s.result.SolvedGrids = append(s.result.SolvedGrids, solvedGrid)
+			s.activeGridCount--
+		case _ = <-s.forkChan:
+			s.result.ForkCount++
+			s.activeGridCount++
+		case _ = <-s.deadChan:
+			s.activeGridCount--
+			s.result.DeadEndCount++
+		case <-timeout:
+			s.result.TimedOut = s.activeGridCount
+			return
+		}
+
+		if s.activeGridCount == 0 {
+			return
+		}
+
+		if s.config.SolutionLimit > 0 && len(s.result.SolvedGrids) >= s.config.SolutionLimit {
+			return
+		}
 	}
 }
 
-func gridSolvingRoutine(grid *suGrid) {
+func gridSolvingRoutine(grid *suGrid, solver *sudokuSolver) {
 	for {
 		if grid.solveByElimination() {
 			continue
 		}
 
 		if grid.gridState == Solved {
-			solvedChan <- grid
+			solver.solvedChan <- grid
 			return
 		}
 
@@ -55,9 +123,16 @@ func gridSolvingRoutine(grid *suGrid) {
 			forks := grid.forkAtLowestOptions()
 
 			for _, fork := range forks {
-				go gridSolvingRoutine(fork)
+				solver.forkChan <- true
+				if solver.config.RunParallel {
+					go gridSolvingRoutine(fork, solver)
+				} else {
+					gridSolvingRoutine(fork, solver)
+				}
 			}
 		}
+
+		solver.deadChan <- true
 
 		return
 	}

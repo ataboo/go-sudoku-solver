@@ -31,6 +31,8 @@ type suGrid struct {
 
 func (g *suGrid) String() string {
 	b := strings.Builder{}
+	b.WriteString(strings.Repeat("_", 19))
+	b.WriteRune('\n')
 	for y := 0; y < 9; y++ {
 		row := g.rows[y]
 
@@ -41,6 +43,9 @@ func (g *suGrid) String() string {
 		}
 		b.WriteRune('\n')
 	}
+
+	b.WriteString(strings.Repeat("_", 19))
+	b.WriteRune('\n')
 
 	return b.String()
 }
