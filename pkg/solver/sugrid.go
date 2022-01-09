@@ -63,10 +63,14 @@ func SudokuGridFromInts(numbers []int) (SudokuGrid, error) {
 		return nil, fmt.Errorf("int grid must be of length 81")
 	}
 
-	grid := newSuGrid()
-	for i, v := range numbers {
-		grid.numbers[i] = v
+	for _, v := range numbers {
+		if v < 0 || v > 9 {
+			return nil, fmt.Errorf("numbers must be between 0 and 9")
+		}
 	}
+
+	grid := newSuGrid()
+	copy(grid.numbers, numbers)
 
 	return grid, nil
 }
