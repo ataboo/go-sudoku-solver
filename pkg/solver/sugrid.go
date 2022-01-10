@@ -313,7 +313,6 @@ func (g *suGrid) forkAtLowestOptions() []*suGrid {
 		forks[i] = fork
 
 		guessVal := g.lowestOpenNumbers[i]
-
 		fork.numbers[g.lowestOpenIndex] = guessVal
 
 		//Update the SetMaps to reflect the filled guess.

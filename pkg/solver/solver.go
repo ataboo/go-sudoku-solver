@@ -80,17 +80,20 @@ func SolveGridWithConfig(sudokuGrid SudokuGrid, config SolverConfig) (*SolverRes
 }
 
 func (s *sudokuSolver) run(grid *suGrid) {
-	timeout := time.After(s.config.Timeout)
+	timeout := make(<-chan time.Time)
+	if s.config.Timeout > 0 {
+		timeout = time.After(s.config.Timeout)
+	}
 
 	for {
 		select {
 		case solvedGrid := <-s.solvedChan:
 			s.result.SolvedGrids = append(s.result.SolvedGrids, solvedGrid)
 			s.activeGridCount--
-		case _ = <-s.forkChan:
+		case <-s.forkChan:
 			s.result.ForkCount++
 			s.activeGridCount++
-		case _ = <-s.deadChan:
+		case <-s.deadChan:
 			s.activeGridCount--
 			s.result.DeadEndCount++
 		case <-timeout:
